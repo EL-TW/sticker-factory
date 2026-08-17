@@ -60,7 +60,12 @@
   }
   h2{font-size:12px; letter-spacing:1.2px; text-transform:uppercase; color:var(--tx2); margin:0 0 12px}
   h2.mt{margin-top:24px}
-  .drop{border:1.5px dashed #3a4353; border-radius:var(--r); padding:26px 16px; text-align:center; color:var(--tx2); cursor:pointer; transition:.15s; background:var(--panel)}
+  /* file input 用「視覺隱藏」而不是 display:none／hidden —
+     被 display:none 的 input，部分瀏覽器不會回應 label 啟動 */
+  #file{position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden;
+        clip:rect(0 0 0 0); white-space:nowrap; border:0}
+  .drop{display:block; border:1.5px dashed #3a4353; border-radius:var(--r); padding:26px 16px; text-align:center; color:var(--tx2); cursor:pointer; transition:.15s; background:var(--panel); -webkit-tap-highlight-color:transparent}
+  .drop:active{background:var(--panel2); border-color:var(--acc)}
   .drop:hover,.drop.over{border-color:var(--acc); color:var(--tx); background:var(--panel2)}
   .drop b{display:block; color:var(--tx); font-size:14px; margin-bottom:4px}
   .drop small{font-size:12px}
@@ -97,6 +102,12 @@
   button.primary{background:var(--acc); color:#0b1220; border-color:transparent; font-weight:600}
   button.primary:hover:not(:disabled){background:#8bbaff}
   button.ghost{background:transparent}
+  /* 長得像按鈕的 label（同樣走原生 label 啟動，不依賴 JS） */
+  .btn{font:inherit; color:var(--tx); background:var(--panel2); border:1px solid var(--line);
+       border-radius:10px; padding:9px 12px; width:100%; text-align:center; cursor:pointer;
+       display:flex; align-items:center; justify-content:center; transition:.15s;
+       -webkit-tap-highlight-color:transparent}
+  .btn:active{border-color:var(--acc); background:#232a35}
   .row{display:flex; gap:8px; margin-bottom:8px}
   .toggle{display:flex; align-items:center; gap:8px; font-size:13px; color:var(--tx2); cursor:pointer; margin-bottom:12px}
   .toggle input{accent-color:var(--acc); width:16px;height:16px}
@@ -139,11 +150,13 @@
   <!-- ============ LEFT ============ -->
   <section class="col left">
     <h2>1 · 匯入照片</h2>
-    <div class="drop" id="drop">
-      <b>拖曳照片到這裡</b>
-      <small>或點擊選檔 · 可一次多張<br>JPG / PNG / HEIC*</small>
-    </div>
-    <input type="file" id="file" accept="image/*" multiple hidden>
+    <!-- 用原生 label 觸發，不用 JS click()：iOS Safari 對程式觸發的
+         file input click 會在頁面重排或記憶體壓力後失效 -->
+    <label class="drop" id="drop" for="file">
+      <b>選擇照片</b>
+      <small>可一次多張，也可以直接拖曳或貼上<br>JPG / PNG / HEIC*</small>
+    </label>
+    <input type="file" id="file" accept="image/*" multiple>
     <div class="thumbs" id="thumbs"></div>
 
     <h2 class="mt">去背引擎</h2>
@@ -185,7 +198,8 @@
       <div class="bar" id="bar"><i></i></div>
       <div class="hint" id="hint">先匯入一張照片吧。</div>
       <div class="row" style="width:min(440px,86vw)">
-        <button id="fix" disabled>🖌 手動修補</button>
+        <label class="btn" id="addMore" for="file">＋ 加照片</label>
+        <button id="fix" disabled>🖌 修補</button>
         <button id="share" class="primary" style="display:none" disabled>分享</button>
       </div>
     </div>
@@ -761,6 +775,19 @@ async function processQueue(){
   if (running) return;
   running = true;
   els.redo.disabled = true; els.model.disabled = true;
+  try {
+    await runQueue();
+  } finally {
+    // 不管中間發生什麼，這個旗標一定要放掉，
+    // 否則之後匯入的照片會全部卡在「等待」而且毫無提示
+    running = false;
+    els.model.disabled = false;
+    els.dlAll.disabled = !items.some(x => x.cut);
+    els.redo.disabled = !items.length;
+  }
+}
+
+async function runQueue(){
   for (const it of items){
     if (it.cut) continue;
     it.status = '去背中'; drawThumbs();
@@ -774,6 +801,7 @@ async function processQueue(){
     } catch (e){
       console.error(e);
       it.status = '失敗';
+      attemptLog.push(`❌ 處理「${it.name}」失敗 — ${errText(e)}`);
       const alt = modelKey === 'fine' ? '「雙引擎合併」或「人像 · MODNet」（最輕，幾乎一定跑得動）'
                 : modelKey === 'portrait' ? '「通用 · RMBG-1.4」' : '「人像 · MODNet」';
       els.hint.innerHTML = `<b style="color:var(--bad)">處理失敗</b><br>`
@@ -782,10 +810,6 @@ async function processQueue(){
     }
     drawThumbs(); renderPreview();
   }
-  running = false;
-  els.model.disabled = false;
-  els.dlAll.disabled = !items.some(x => x.cut);
-  els.redo.disabled = !items.length;
   if (items.some(x => x.cut))
     els.hint.textContent = IS_MOBILE
       ? '邊緣不對的話按「手動修補」，或換一個去背引擎重跑。'
@@ -945,8 +969,14 @@ window.addEventListener('keydown', e => {
 /* =========================================================
    事件
 ========================================================= */
-els.drop.onclick = () => els.file.click();
-els.file.onchange = e => { addFiles(e.target.files); e.target.value = ''; };
+// 選檔一律靠 <label for="file"> 的原生啟動，不呼叫 file.click()。
+// value 在「開啟選擇器之前」清掉，這樣選同一張照片也會觸發 change；
+// 在 change 裡才清的話，iOS 有機會讓這個 input 卡在已用過的狀態。
+els.file.addEventListener('click', () => { els.file.value = ''; });
+els.file.addEventListener('change', e => {
+  const files = e.target.files;
+  if (files?.length) addFiles(files);
+});
 ['dragenter','dragover'].forEach(t => els.drop.addEventListener(t, e => { e.preventDefault(); els.drop.classList.add('over'); }));
 ['dragleave','drop'].forEach(t => els.drop.addEventListener(t, e => { e.preventDefault(); els.drop.classList.remove('over'); }));
 els.drop.addEventListener('drop', e => addFiles(e.dataTransfer.files));
@@ -1061,9 +1091,18 @@ window.__sticker = { makeSticker, autoCrop, addOutline, sharpenAlpha, silhouette
                      alphaProfile, maxSrc, IS_MOBILE, IS_APPLE,
                      _state:{ items, openEditor, drawEditor, get edit(){ return edit; },
                               setCurrent:i => { current = i; },
-                              setCap:o => Object.assign(CAP, o) } };
+                              setCap:o => Object.assign(CAP, o),
+                              processQueue, isRunning: () => running } };
 
 els.diagBtn.onclick = showDiag;
+
+// 把未捕捉的錯誤留在診斷紀錄裡：靜默壞掉是最難查的狀況
+window.addEventListener('error', e => {
+  attemptLog.push(`💥 未捕捉錯誤：${e.message} @ ${(e.filename || '').split('/').pop()}:${e.lineno}`);
+});
+window.addEventListener('unhandledrejection', e => {
+  attemptLog.push(`💥 未處理的 rejection：${errText(e.reason)}`);
+});
 
 /* ---- 分享（手機上比「下載再從相簿翻出來」好用得多） ---- */
 els.share.onclick = async () => {

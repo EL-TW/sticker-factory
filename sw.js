@@ -9,7 +9,7 @@
  *      （它有自己的一套快取鍵，重複快取只會浪費配額，手機上配額很珍貴）
  */
 
-const VERSION = 'v5';
+const VERSION = 'v6';
 const SHELL_CACHE = `sticker-shell-${VERSION}`;
 const LIB_CACHE   = `sticker-lib-${VERSION}`;
 
