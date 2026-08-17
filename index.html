@@ -1,0 +1,1127 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>貼紙工廠 · Sticker Factory</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0e1014">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="貼紙工廠">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon-192.png">
+<style>
+  :root{
+    --bg:#0e1014; --panel:#161a21; --panel2:#1d222b; --line:#2a313d;
+    --tx:#e8ecf2; --tx2:#98a2b3; --acc:#6ea8fe; --acc2:#8ef0c0; --warn:#ffcc66; --bad:#ff7a7a;
+    --r:14px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:var(--bg); color:var(--tx);
+    font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  header{padding:18px 22px; border-bottom:1px solid var(--line); display:flex; align-items:baseline; gap:12px; flex-wrap:wrap}
+  header h1{font-size:17px; margin:0; letter-spacing:.5px}
+  header .sub{color:var(--tx2); font-size:13px}
+  header .badge{margin-left:auto; font-size:12px; color:var(--tx2); border:1px solid var(--line); border-radius:99px; padding:4px 10px}
+  main{display:grid; grid-template-columns:300px minmax(0,1fr) 300px; height:calc(100% - 61px)}
+  .col{padding:18px; overflow:auto}
+  .col.left{border-right:1px solid var(--line)}
+  .col.right{border-left:1px solid var(--line)}
+
+  /* ---- 手機／窄螢幕：改成單欄，預覽擺最上面 ---- */
+  @media (max-width:900px){
+    body{height:auto}
+    header{padding:12px 16px; position:sticky; top:0; z-index:10; background:var(--bg)}
+    header h1{font-size:15px}
+    header .sub{display:none}
+    main{grid-template-columns:1fr; height:auto}
+    .col{padding:16px; overflow:visible}
+    .col.left{border-right:0; border-top:1px solid var(--line); order:2}
+    .col.right{border-left:0; border-top:1px solid var(--line); order:3}
+    .col.center{order:1}
+    .stagewrap{min-height:0; padding-bottom:4px}
+    #preview{width:min(360px,72vw)}
+    .thumbs{grid-template-columns:repeat(4,1fr)}
+    .thumb .x{opacity:1}
+    /* 觸控目標放大到 44px */
+    select,button{padding:12px 14px; min-height:44px}
+    .presetrow button{min-height:40px}
+    input[type=range]{height:32px}
+    #editCanvas{max-width:94vw; max-height:52vh}
+    .etoolbar{width:100%; padding:10px}
+    .etoolbar button{min-height:44px}
+    .etoolbar .sz input{width:90px}
+    body{padding-bottom:env(safe-area-inset-bottom)}
+  }
+  h2{font-size:12px; letter-spacing:1.2px; text-transform:uppercase; color:var(--tx2); margin:0 0 12px}
+  h2.mt{margin-top:24px}
+  .drop{border:1.5px dashed #3a4353; border-radius:var(--r); padding:26px 16px; text-align:center; color:var(--tx2); cursor:pointer; transition:.15s; background:var(--panel)}
+  .drop:hover,.drop.over{border-color:var(--acc); color:var(--tx); background:var(--panel2)}
+  .drop b{display:block; color:var(--tx); font-size:14px; margin-bottom:4px}
+  .drop small{font-size:12px}
+  .thumbs{display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:14px}
+  .thumb{position:relative; aspect-ratio:1; border-radius:10px; overflow:hidden; cursor:pointer; border:2px solid transparent; background:var(--panel2)}
+  .thumb.sel{border-color:var(--acc)}
+  .thumb img{width:100%;height:100%;object-fit:cover;display:block}
+  .thumb .st{position:absolute; inset:auto 0 0 0; font-size:10px; text-align:center; background:#000a; padding:2px; color:var(--warn)}
+  .thumb .st.ok{color:var(--acc2)}
+  .thumb .x{position:absolute; top:2px; right:2px; width:18px;height:18px; line-height:16px; text-align:center; background:#000b; border-radius:50%; font-size:12px; color:#fff; opacity:0; transition:.15s}
+  .thumb:hover .x{opacity:1}
+
+  .stagewrap{display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; min-height:420px; height:100%}
+  #preview{
+    width:min(440px,80vw); aspect-ratio:1; border-radius:var(--r); background-color:#20252e;
+    background-image:linear-gradient(45deg,#2a303a 25%,transparent 25%),linear-gradient(-45deg,#2a303a 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#2a303a 75%),linear-gradient(-45deg,transparent 75%,#2a303a 75%);
+    background-size:20px 20px; background-position:0 0,0 10px,10px -10px,-10px 0;
+    display:block; box-shadow:0 10px 40px #0006;
+  }
+  .hint{color:var(--tx2); font-size:13px; text-align:center; max-width:480px}
+  .bar{width:min(440px,80vw); height:5px; border-radius:99px; background:var(--panel2); overflow:hidden; display:none}
+  .bar.on{display:block}
+  .bar i{display:block; height:100%; width:0; background:linear-gradient(90deg,var(--acc),var(--acc2)); transition:width .2s}
+
+  .field{margin-bottom:16px}
+  .field label{display:flex; justify-content:space-between; font-size:13px; color:var(--tx2); margin-bottom:6px}
+  .field label b{color:var(--tx); font-weight:500; font-variant-numeric:tabular-nums}
+  input[type=range]{width:100%; accent-color:var(--acc)}
+  input[type=color]{width:100%; height:32px; padding:0; border:1px solid var(--line); border-radius:8px; background:var(--panel2)}
+  select,button{font:inherit; color:var(--tx); background:var(--panel2); border:1px solid var(--line); border-radius:10px; padding:9px 12px; width:100%}
+  button{cursor:pointer; transition:.15s}
+  button:hover:not(:disabled){border-color:var(--acc); background:#232a35}
+  button:disabled{opacity:.45; cursor:not-allowed}
+  button.primary{background:var(--acc); color:#0b1220; border-color:transparent; font-weight:600}
+  button.primary:hover:not(:disabled){background:#8bbaff}
+  button.ghost{background:transparent}
+  .row{display:flex; gap:8px; margin-bottom:8px}
+  .toggle{display:flex; align-items:center; gap:8px; font-size:13px; color:var(--tx2); cursor:pointer; margin-bottom:12px}
+  .toggle input{accent-color:var(--acc); width:16px;height:16px}
+  .meta{font-size:11px; color:var(--tx2); text-align:center; margin-top:8px; min-height:15px; font-variant-numeric:tabular-nums}
+  .note{font-size:11.5px; color:var(--tx2); line-height:1.5; border-top:1px solid var(--line); padding-top:12px; margin-top:16px}
+  .note b{color:var(--tx)}
+  .presetrow{display:flex; gap:6px; margin-bottom:14px}
+  .presetrow button{padding:6px 4px; font-size:12px}
+  .modelnote{font-size:11.5px; color:var(--tx2); margin:-8px 0 14px; line-height:1.5}
+  #diag{display:none; font-size:10.5px; line-height:1.5; color:var(--tx2); background:#0a0c11; border:1px solid var(--line);
+        border-radius:10px; padding:10px; white-space:pre-wrap; word-break:break-all; max-height:220px; overflow:auto; margin:0 0 12px}
+  #diag.on{display:block}
+
+  /* ---- 修補筆刷 ---- */
+  #editor{position:fixed; inset:0; background:#080a0ee6; backdrop-filter:blur(6px); display:none; z-index:50; flex-direction:column; align-items:center; justify-content:center; gap:14px; padding:20px}
+  #editor.on{display:flex}
+  #editCanvas{
+    max-width:min(78vw,900px); max-height:62vh; border-radius:10px; touch-action:none; cursor:crosshair;
+    background:#20252e; box-shadow:0 20px 60px #000a;
+  }
+  .etoolbar{display:flex; gap:10px; align-items:center; flex-wrap:wrap; justify-content:center; background:var(--panel); border:1px solid var(--line); border-radius:var(--r); padding:12px 16px}
+  .etoolbar button{width:auto; padding:8px 14px}
+  .etoolbar .seg{display:flex; gap:0; border:1px solid var(--line); border-radius:10px; overflow:hidden}
+  .etoolbar .seg button{border:0; border-radius:0; background:transparent}
+  .etoolbar .seg button.on{background:var(--acc); color:#0b1220; font-weight:600}
+  .etoolbar .sz{display:flex; align-items:center; gap:8px; font-size:13px; color:var(--tx2)}
+  .etoolbar .sz input{width:120px}
+  .ehint{color:var(--tx2); font-size:12.5px; text-align:center; max-width:640px}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🎨 貼紙工廠</h1>
+  <span class="sub">照片主體去背 → 貼紙描邊 → 一鍵匯出</span>
+  <span class="badge" id="engine">引擎待命</span>
+</header>
+
+<main>
+  <!-- ============ LEFT ============ -->
+  <section class="col left">
+    <h2>1 · 匯入照片</h2>
+    <div class="drop" id="drop">
+      <b>拖曳照片到這裡</b>
+      <small>或點擊選檔 · 可一次多張<br>JPG / PNG / HEIC*</small>
+    </div>
+    <input type="file" id="file" accept="image/*" multiple hidden>
+    <div class="thumbs" id="thumbs"></div>
+
+    <h2 class="mt">去背引擎</h2>
+    <div class="field">
+      <select id="model">
+        <option value="combo" selected>雙引擎合併（預設，最不容易吃掉衣服）</option>
+        <option value="portrait">人像 · MODNet（最輕量最快）</option>
+        <option value="fast">通用 · RMBG-1.4</option>
+        <option value="fine">精細 · BiRefNet-lite（Safari 上可能失敗）</option>
+      </select>
+    </div>
+    <div class="modelnote" id="modelnote"></div>
+
+    <label class="toggle"><input type="checkbox" id="passthrough" checked> 已去背的圖直接用，不跑 AI</label>
+
+    <div class="row"><button id="redo" disabled>用目前引擎重新去背</button></div>
+    <div class="row"><button id="prefetch">📥 預先下載模型（離線用）</button></div>
+    <div class="row"><button id="diagBtn" class="ghost" style="font-size:12px;padding:6px">🔧 診斷資訊</button></div>
+    <pre id="diag"></pre>
+
+    <div class="note" id="iosTip" style="display:none">
+      <b>iPhone / iPad 小技巧</b><br>
+      在「照片」App 裡長按主體 →「拷貝主體」，再回到這裡貼上，
+      就會直接跳過 AI 去背（Apple 自己的去背又快又準），只做描邊。<br>
+      連模型都不用下載。
+    </div>
+
+    <div class="note">
+      去背在你的裝置本機執行，照片不會上傳到任何伺服器。<br>
+      模型第一次載入後瀏覽器會快取，之後就快了。<br>
+      * HEIC 需瀏覽器支援，iOS / macOS Safari 可以，Chrome 請先轉成 JPG。
+    </div>
+  </section>
+
+  <!-- ============ CENTER ============ -->
+  <section class="col center">
+    <div class="stagewrap">
+      <canvas id="preview" width="512" height="512"></canvas>
+      <div class="bar" id="bar"><i></i></div>
+      <div class="hint" id="hint">先匯入一張照片吧。</div>
+      <div class="row" style="width:min(440px,86vw)">
+        <button id="fix" disabled>🖌 手動修補</button>
+        <button id="share" class="primary" style="display:none" disabled>分享</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ RIGHT ============ -->
+  <section class="col right">
+    <h2>2 · 貼紙樣式</h2>
+    <div class="presetrow">
+      <button data-preset="classic">經典白邊</button>
+      <button data-preset="thick">粗邊漫畫</button>
+      <button data-preset="clean">純去背</button>
+    </div>
+
+    <div class="field">
+      <label>描邊粗細 <b id="v-outline">10</b></label>
+      <input type="range" id="outline" min="0" max="30" value="10">
+    </div>
+    <div class="field">
+      <label>描邊顏色</label>
+      <input type="color" id="outlineColor" value="#ffffff">
+    </div>
+    <label class="toggle"><input type="checkbox" id="shadow" checked> 加投影</label>
+    <div class="field">
+      <label>邊緣銳利度 <b id="v-edge">1.6</b></label>
+      <input type="range" id="edge" min="0.6" max="4" step="0.1" value="1.6">
+    </div>
+    <div class="field">
+      <label>留白 <b id="v-pad">8</b>%</label>
+      <input type="range" id="pad" min="0" max="25" value="8">
+    </div>
+
+    <h2 class="mt">3 · 匯出</h2>
+    <div class="field">
+      <label>尺寸</label>
+      <select id="size">
+        <option value="512">512 × 512（Telegram / WhatsApp）</option>
+        <option value="1024">1024 × 1024（高解析）</option>
+        <option value="370">370 × 370（LINE 貼圖參考）</option>
+      </select>
+    </div>
+    <div class="field">
+      <select id="fmt">
+        <option value="png">PNG（通用、最保險）</option>
+        <option value="webp">WebP（Telegram / WhatsApp 貼紙）</option>
+      </select>
+    </div>
+    <div class="row"><button class="primary" id="dl" disabled>下載這張</button></div>
+    <div class="row"><button id="dlAll" disabled>打包下載全部（ZIP）</button></div>
+    <div class="meta" id="meta"></div>
+
+    <div class="note">
+      <b>平台規格備忘</b><br>
+      Telegram：512×512 WebP，&lt; 512KB<br>
+      WhatsApp：512×512 WebP，&lt; 100KB，另需 96×96 tray 圖<br>
+      LINE：主圖最大 370×320 PNG，需送審
+    </div>
+  </section>
+</main>
+
+<!-- ============ 修補筆刷 ============ -->
+<div id="editor">
+  <canvas id="editCanvas"></canvas>
+  <div class="etoolbar">
+    <div class="seg">
+      <button id="mAdd" class="on">➕ 加回來</button>
+      <button id="mDel">➖ 擦掉</button>
+    </div>
+    <div class="sz">筆刷 <input type="range" id="brush" min="4" max="120" value="34"><b id="v-brush">34</b></div>
+    <button id="undo" class="ghost">↩ 復原</button>
+    <button id="resetMask" class="ghost">重設</button>
+    <button id="doneFix" class="primary" style="width:auto">完成</button>
+  </div>
+  <div class="ehint">壓暗泛紅的區域 = 會被去掉的地方。用「加回來」把被誤刪的衣服塗回去，用「擦掉」清掉多餘的背景。支援滑鼠與觸控；快捷鍵 [ ] 調筆刷、⌘/Ctrl+Z 復原、Esc 完成。</div>
+</div>
+
+<script type="module">
+/* =========================================================
+   Transformers.js 動態載入（頁面可離線開啟，用到才抓）
+========================================================= */
+const TF_URL = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3';
+let TF = null;
+async function tf(){
+  if (!TF){
+    try { TF = await import(TF_URL); }
+    catch { throw new Error('無法載入 AI 函式庫，請確認網路連線後重新整理。'); }
+    TF.env.allowLocalModels = false;
+  }
+  return TF;
+}
+
+/* =========================================================
+   模型表
+========================================================= */
+// variants 依序嘗試；任何一組在「載入」或「推論」階段失敗，就自動換下一組。
+// needF16 的組合只有在 GPU 支援 shader-f16 時才會被排進去。
+const MODELS = {
+  fast: {
+    id: 'briaai/RMBG-1.4',
+    name: 'RMBG-1.4',
+    inputName: 'input', outputName: 'output', sigmoid: false,
+    modelOpts: { config: { model_type:'custom' } },
+    // 這個 repo 沒有 preprocessor_config.json，要自己給
+    processorConfig: {
+      do_normalize:true, do_pad:false, do_rescale:true, do_resize:true,
+      image_mean:[0.5,0.5,0.5], image_std:[1,1,1],
+      feature_extractor_type:'ImageFeatureExtractor',
+      resample:2, rescale_factor:1/255, size:{ width:1024, height:1024 },
+    },
+    variants: [
+      { device:'webgpu', dtype:'fp32', mb:176, gpu:true },
+      { device:'wasm',   dtype:'q8',   mb:45 },
+      { device:'wasm',   dtype:'fp32', mb:176 },
+    ],
+    note: '快、通用。缺點是遇到同色系（衣服和背景同色）容易連衣服一起吃掉。',
+  },
+  portrait: {
+    id: 'Xenova/modnet',
+    name: 'MODNet',
+    inputName: 'input', outputName: 'output', sigmoid: false,
+    modelOpts: {},
+    processorConfig: null,
+    variants: [
+      { device:'webgpu', dtype:'fp32', mb:26, gpu:true },
+      { device:'wasm',   dtype:'q8',   mb:7 },
+      { device:'wasm',   dtype:'fp32', mb:26 },
+    ],
+    note: '專門訓練來摳「人」的人像去背模型，對衣服、髮絲比 RMBG 穩，而且只有 7–26MB、幾乎任何裝置都跑得動。不適合非人物的主體。',
+  },
+  fine: {
+    id: 'onnx-community/BiRefNet_lite-ONNX',
+    name: 'BiRefNet-lite',
+    inputName: 'input_image', outputName: 'output_image', sigmoid: true,   // 輸出是 logits
+    modelOpts: {},
+    processorConfig: null,     // 用 repo 自帶的設定
+    variants: [
+      { device:'webgpu', dtype:'fp16', mb:115, gpu:true, needF16:true },
+      { device:'webgpu', dtype:'fp32', mb:224, gpu:true },
+      { device:'wasm',   dtype:'fp32', mb:224 },
+      // 社群「為了網頁修過」的版本，官方那份在某些瀏覽器（例如 Safari）會直接掛掉
+      { device:'webgpu', dtype:'fp32', mb:115, gpu:true, repo:'bowespublishing/BiRefNet_lite-patched-for-web' },
+      { device:'wasm',   dtype:'fp32', mb:115, repo:'bowespublishing/BiRefNet_lite-patched-for-web' },
+    ],
+    note: '理論上邊緣最準，但這份 ONNX 在 Safari 上會在建立 session 時就失敗（跟記憶體無關，是模型本身的相容性問題）。失敗時會自動改試社群修補版；再不行請改用上面三種。',
+  },
+  combo: {
+    name: '雙引擎合併',
+    combine: ['portrait', 'fast'],   // MODNet ∪ RMBG-1.4
+    note: '同時跑人像模型和通用模型，再逐像素取兩者的最大值合併 — 只要其中一個有認出衣服就會被保留，正好解決單一模型把同色衣服吃掉的問題。代價是每張要跑兩次。',
+  },
+};
+
+// 執行環境能力（啟動時偵測一次）
+const CAP = { webgpu:false, f16:false, adapter:'未偵測', probed:false };
+async function probeGPU(){
+  CAP.probed = true;
+  if (!navigator.gpu){ CAP.adapter = '這個瀏覽器沒有 WebGPU'; return CAP; }
+  try {
+    const ad = await navigator.gpu.requestAdapter();
+    if (!ad){ CAP.adapter = 'WebGPU 存在但拿不到 adapter'; return CAP; }
+    CAP.webgpu = true;
+    CAP.f16 = ad.features?.has('shader-f16') ?? false;
+    const info = await (ad.requestAdapterInfo?.() ?? Promise.resolve(null));
+    CAP.adapter = [info?.vendor, info?.architecture, info?.description].filter(Boolean).join(' ') || 'WebGPU 可用';
+  } catch (e){ CAP.adapter = 'WebGPU 偵測失敗：' + errText(e); }
+  return CAP;
+}
+
+// 挑出這台機器實際可用的 variants
+function usableVariants(cfg){
+  return (cfg.variants || []).filter(v => (!v.gpu || CAP.webgpu) && (!v.needF16 || CAP.f16));
+}
+
+// ONNX Runtime 從 WASM 丟出來的例外常常只是一個數字（heap 指標），要翻譯成人話
+function errText(e){
+  if (typeof e === 'number')
+    return `ONNX Runtime 內部錯誤 (${e}) — 幾乎都是記憶體不足，或這個後端跑不動這個模型`;
+  const m = e?.message || String(e);
+  if (/out of memory|allocation|OOM/i.test(m)) return '記憶體不足：' + m;
+  if (/404|not found/i.test(m))               return '模型檔案抓不到（404）：' + m;
+  return m;
+}
+
+/* =========================================================
+   狀態
+========================================================= */
+// item = { name, file, thumbURL, src:Canvas, mask:Uint8ClampedArray, cut:Canvas, status, edited }
+const items = [];
+let current = -1;
+let modelKey = 'combo';
+const loaded = {};            // modelKey -> Promise<{model, processor}>
+
+const $ = id => document.getElementById(id);
+const els = {};
+['drop','file','thumbs','preview','bar','hint','engine','meta','outline','outlineColor','shadow',
+ 'edge','pad','size','fmt','dl','dlAll','model','modelnote','redo','fix','editor','editCanvas',
+ 'mAdd','mDel','brush','undo','resetMask','doneFix','diag','diagBtn',
+ 'share','prefetch','passthrough','iosTip'].forEach(k => els[k] = $(k));
+
+// 行動裝置：預設走輕量引擎、來源解析度降一級
+const IS_TOUCH  = matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 1;
+const IS_APPLE  = /iPhone|iPad|iPod/.test(navigator.userAgent) ||
+                  (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const IS_MOBILE = IS_TOUCH && (IS_APPLE || /Android/i.test(navigator.userAgent) || innerWidth < 900);
+
+/* =========================================================
+   載入模型
+========================================================= */
+function setProgress(p){
+  els.bar.classList.toggle('on', p !== null);
+  if (p !== null) els.bar.querySelector('i').style.width = Math.round(p*100) + '%';
+}
+
+const vkey = (key, v) => `${key}|${v.repo || ''}|${v.device}|${v.dtype}`;
+
+function loadModel(key, v){
+  const k = vkey(key, v);
+  if (loaded[k]) return loaded[k];
+  const cfg = MODELS[key];
+  const repo = v.repo || cfg.id;
+  loaded[k] = (async () => {
+    const { AutoModel, AutoProcessor } = await tf();
+    els.engine.textContent = `載入 ${cfg.name}（${v.device}/${v.dtype}）…`;
+    const files = {};
+    const progress_callback = d => {
+      if (d.status === 'progress' && d.file){
+        files[d.file] = d.progress || 0;
+        const a = Object.values(files);
+        setProgress(a.reduce((x,y)=>x+y,0) / a.length / 100);
+      }
+    };
+    const model = await AutoModel.from_pretrained(repo,
+      { ...cfg.modelOpts, progress_callback, device:v.device, dtype:v.dtype });
+    const processor = await AutoProcessor.from_pretrained(repo,
+      cfg.processorConfig ? { config: cfg.processorConfig } : {});
+    setProgress(null);
+    const sess = model.sessions?.model ?? model.session;
+    console.info('[貼紙工廠] 載入成功', repo, v,
+                 '\n  inputNames :', sess?.inputNames,
+                 '\n  outputNames:', sess?.outputNames);
+    return { model, processor, sess };
+  })();
+  loaded[k].catch(() => { delete loaded[k]; setProgress(null); });
+  return loaded[k];
+}
+
+/* =========================================================
+   推論：回傳 { src, mask }
+========================================================= */
+// 來源解析度上限：手機或沒有 WebGPU 時降一級，省記憶體
+function maxSrc(){ return (IS_MOBILE || !CAP.webgpu) ? 1024 : 1600; }
+
+const attemptLog = [];
+
+// 判斷這張圖是不是「已經去過背」：JPEG 不可能有透明像素，
+// 所以只要有一定比例的全透明區域，就幾乎確定是去背過的 PNG。
+function alphaProfile(d, n){
+  let clear = 0, semi = 0;
+  for (let i = 0; i < n; i++){
+    const a = d[i*4 + 3];
+    if (a < 8) clear++;
+    else if (a < 248) semi++;
+  }
+  return { clearPct: clear/n, semiPct: semi/n, preCut: clear/n > 0.02 };
+}
+
+// 把檔案讀進來、縮到上限。這一步刻意不依賴 transformers.js —
+// 已去背的圖走直通模式時，連函式庫都不會被下載。
+async function prepare(file){
+  const bmp = await createImageBitmap(file, { imageOrientation:'from-image' });
+  const lim = maxSrc();
+  const sc = Math.min(1, lim / Math.max(bmp.width, bmp.height));
+  const w = Math.max(1, Math.round(bmp.width * sc));
+  const h = Math.max(1, Math.round(bmp.height * sc));
+
+  const src = document.createElement('canvas');
+  src.width = w; src.height = h;
+  const ctx = src.getContext('2d', { willReadFrequently:true });
+  ctx.drawImage(bmp, 0, 0, w, h);
+  bmp.close?.();
+
+  const d = ctx.getImageData(0, 0, w, h);
+  return { src, w, h, imgData: d, alpha: alphaProfile(d.data, w*h) };
+}
+
+// 逐像素取最大值合併：只要任一模型認為是主體就保留
+function mergeMasks(masks){
+  const out = new Uint8ClampedArray(masks[0].length);
+  for (let i = 0; i < out.length; i++){
+    let m = 0;
+    for (const k of masks) if (k[i] > m) m = k[i];
+    out[i] = m;
+  }
+  return out;
+}
+
+async function segment(file, key){
+  if (!CAP.probed) await probeGPU();
+  const { src, w, h, imgData, alpha } = await prepare(file);
+
+  // 直通模式：圖已經有透明背景（例如 iOS 的「拷貝主體」），
+  // 直接把 alpha 通道當遮罩用，完全不碰 AI。
+  if (els.passthrough.checked && alpha.preCut){
+    const mask = new Uint8ClampedArray(w*h);
+    for (let i = 0; i < w*h; i++) mask[i] = imgData.data[i*4 + 3];
+    els.engine.textContent = '直通模式（圖片已去背）';
+    attemptLog.push(`✅ 直通模式 — 偵測到 ${(alpha.clearPct*100).toFixed(0)}% 透明像素，跳過 AI`);
+    return { src, mask, passthrough:true };
+  }
+
+  const raw = await toRaw(imgData, w, h);
+  const cfg = MODELS[key];
+
+  if (cfg.combine){
+    const masks = [];
+    for (let i = 0; i < cfg.combine.length; i++){
+      const sub = cfg.combine[i];
+      els.hint.textContent = `雙引擎合併：跑第 ${i+1}/${cfg.combine.length} 個（${MODELS[sub].name}）…`;
+      masks.push(await inferMask(raw, w, h, sub));
+    }
+    els.engine.textContent = `${cfg.name} · ${cfg.combine.map(k => MODELS[k].name).join(' + ')}`;
+    attemptLog.push(`✅ 合併 ${cfg.combine.map(k => MODELS[k].name).join(' ∪ ')}`);
+    return { src, mask: mergeMasks(masks) };
+  }
+  return { src, mask: await inferMask(raw, w, h, key) };
+}
+
+async function toRaw(imgData, w, h){
+  const { RawImage } = await tf();
+  return new RawImage(new Uint8ClampedArray(imgData.data), w, h, 4).rgb();
+}
+
+async function inferMask(raw, w, h, key){
+  const { RawImage } = await tf();
+  const cfg = MODELS[key];
+
+  // 依序嘗試各後端；上次成功的那組排最前面
+  const variants = usableVariants(cfg).slice()
+    .sort((a, b) => (b === cfg._good ? 1 : 0) - (a === cfg._good ? 1 : 0));
+  if (!variants.length) throw new Error(`${cfg.name} 在這台裝置上沒有可用的後端。`);
+
+  const fails = [];
+  for (const v of variants){
+    const src = v.repo ? `${v.repo.split('/')[0]}版 ` : '';
+    const tag = `${cfg.name} ${src}${v.device}/${v.dtype}`;
+    let stage = '載入';                      // 用來標記到底掛在哪一步
+    try {
+      els.hint.textContent = `以 ${tag} 處理中…（模型約 ${v.mb}MB）`;
+      const { model, processor, sess } = await loadModel(key, v);
+
+      stage = '前處理';
+      const { pixel_values } = await processor(raw);
+
+      // 輸入名稱：先用設定值，對不上就取 session 的第一個
+      stage = '推論';
+      const names = sess?.inputNames;
+      const inName = (names?.length && !names.includes(cfg.inputName)) ? names[0] : cfg.inputName;
+      const res = await model({ [inName]: pixel_values });
+
+      stage = '後處理';
+      let t = res[cfg.outputName] ?? res.output ?? res.output_image ?? res.logits ?? Object.values(res).at(-1);
+      if (Array.isArray(t)) t = t.at(-1);
+      if (!t) throw new Error('模型沒有回傳可用的輸出：' + Object.keys(res).join(', '));
+
+      let m = t[0];
+      if (cfg.sigmoid) m = m.sigmoid();
+      const maskImg = await RawImage.fromTensor(m.mul(255).to('uint8')).resize(w, h);
+
+      cfg._good = v;
+      els.engine.textContent = `${cfg.name} · ${v.device === 'webgpu' ? 'WebGPU' : 'CPU'}/${v.dtype}`;
+      attemptLog.push(`✅ ${tag}`);
+      return new Uint8ClampedArray(maskImg.data);
+
+    } catch (e){
+      const msg = errText(e);
+      console.warn(`[貼紙工廠] ${tag} 在「${stage}」失敗：`, e);
+      attemptLog.push(`❌ ${tag} — 掛在【${stage}】 — ${msg}`);
+      fails.push(`• ${tag}（${stage}階段）：${msg}`);
+      delete loaded[vkey(key, v)];
+      setProgress(null);
+      if (cfg._good === v) delete cfg._good;
+    }
+  }
+  els.engine.textContent = `${cfg.name} 全部後端失敗`;
+  throw new Error(`${cfg.name} 在這台裝置上跑不起來：\n${fails.join('\n')}`);
+}
+
+// 用 mask 合成出去背圖
+function applyMask(src, mask){
+  const w = src.width, h = src.height;
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const ctx = c.getContext('2d', { willReadFrequently:true });
+  ctx.drawImage(src, 0, 0);
+  const d = ctx.getImageData(0, 0, w, h);
+  for (let i = 0, n = w*h; i < n; i++) d.data[i*4 + 3] = mask[i];
+  ctx.putImageData(d, 0, 0);
+  return c;
+}
+
+/* =========================================================
+   貼紙後處理
+========================================================= */
+function sharpenAlpha(src, k){
+  const w = src.width, h = src.height;
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const ctx = c.getContext('2d', { willReadFrequently:true });
+  ctx.drawImage(src, 0, 0);
+  if (k <= 1.001) return c;
+  const d = ctx.getImageData(0, 0, w, h);
+  const lut = new Uint8ClampedArray(256);
+  for (let a = 0; a < 256; a++) lut[a] = Math.max(0, Math.min(255, Math.round(((a/255 - 0.5)*k + 0.5) * 255)));
+  for (let i = 3; i < d.data.length; i += 4) d.data[i] = lut[d.data[i]];
+  ctx.putImageData(d, 0, 0);
+  return c;
+}
+
+function autoCrop(src, thr = 10){
+  const w = src.width, h = src.height;
+  const d = src.getContext('2d', { willReadFrequently:true }).getImageData(0, 0, w, h).data;
+  let x0 = w, y0 = h, x1 = -1, y1 = -1;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++){
+    if (d[(y*w + x)*4 + 3] > thr){
+      if (x < x0) x0 = x; if (x > x1) x1 = x;
+      if (y < y0) y0 = y; if (y > y1) y1 = y;
+    }
+  }
+  if (x1 < 0) return src;
+  const cw = x1 - x0 + 1, ch = y1 - y0 + 1;
+  const out = document.createElement('canvas');
+  out.width = cw; out.height = ch;
+  out.getContext('2d').drawImage(src, x0, y0, cw, ch, 0, 0, cw, ch);
+  return out;
+}
+
+function silhouette(src, color){
+  const c = document.createElement('canvas');
+  c.width = src.width; c.height = src.height;
+  const ctx = c.getContext('2d');
+  ctx.drawImage(src, 0, 0);
+  ctx.globalCompositeOperation = 'source-in';
+  ctx.fillStyle = color;
+  ctx.fillRect(0, 0, c.width, c.height);
+  return c;
+}
+
+function addOutline(src, r, color){
+  if (r <= 0) return src;
+  const pad = Math.ceil(r) + 2;
+  const c = document.createElement('canvas');
+  c.width = src.width + pad*2; c.height = src.height + pad*2;
+  const ctx = c.getContext('2d');
+  const sil = silhouette(src, color);
+  const steps = Math.max(24, Math.ceil(r * 4));
+  for (const rr of [r, r*0.66, r*0.33])
+    for (let i = 0; i < steps; i++){
+      const a = (i/steps) * Math.PI * 2;
+      ctx.drawImage(sil, pad + Math.cos(a)*rr, pad + Math.sin(a)*rr);
+    }
+  ctx.drawImage(sil, pad, pad);
+  ctx.drawImage(src, pad, pad);
+  return c;
+}
+
+function makeSticker(rawCut, o){
+  const { size, outline, color, shadow, edge, padPct } = o;
+  const cropped = autoCrop(sharpenAlpha(rawCut, edge));
+  const margin = size * (padPct/100) + (shadow ? size*0.03 : 0);
+  const avail  = Math.max(16, size - margin*2);
+  const r = Math.min(outline * size / 512, avail * 0.2);
+  const inner = Math.max(8, avail - r*2);
+  const s = Math.min(inner / cropped.width, inner / cropped.height);
+  const cw = Math.max(1, Math.round(cropped.width * s));
+  const ch = Math.max(1, Math.round(cropped.height * s));
+
+  const scaled = document.createElement('canvas');
+  scaled.width = cw; scaled.height = ch;
+  const sctx = scaled.getContext('2d');
+  sctx.imageSmoothingQuality = 'high';
+  sctx.drawImage(cropped, 0, 0, cw, ch);
+
+  const withEdge = addOutline(scaled, r, color);
+  const out = document.createElement('canvas');
+  out.width = size; out.height = size;
+  const ctx = out.getContext('2d');
+  ctx.imageSmoothingQuality = 'high';
+  if (shadow){
+    ctx.shadowColor = 'rgba(0,0,0,0.35)';
+    ctx.shadowBlur = size*0.035;
+    ctx.shadowOffsetY = size*0.018;
+  }
+  ctx.drawImage(withEdge, (size - withEdge.width)/2, (size - withEdge.height)/2);
+  return out;
+}
+
+/* =========================================================
+   UI
+========================================================= */
+function opts(){
+  return { size:+els.size.value, outline:+els.outline.value, color:els.outlineColor.value,
+           shadow:els.shadow.checked, edge:+els.edge.value, padPct:+els.pad.value };
+}
+
+function renderPreview(){
+  const ctx = els.preview.getContext('2d');
+  ctx.clearRect(0, 0, 512, 512);
+  const it = items[current];
+  const ready = !!it?.cut;
+  els.dl.disabled = !ready;
+  els.fix.disabled = !ready;
+  els.share.disabled = !ready;
+  els.redo.disabled = !items.length;
+  if (!ready) return;
+  ctx.drawImage(makeSticker(it.cut, { ...opts(), size:512 }), 0, 0, 512, 512);
+  updateSize();
+}
+
+let sizeTimer;
+function updateSize(){
+  clearTimeout(sizeTimer);
+  sizeTimer = setTimeout(async () => {
+    const it = items[current];
+    if (!it?.cut) return;
+    const blob = await exportBlob(it);
+    els.meta.textContent = `${els.size.value}×${els.size.value} ${els.fmt.value.toUpperCase()} · ${(blob.size/1024).toFixed(0)} KB`;
+  }, 250);
+}
+
+function exportBlob(it){
+  const st = makeSticker(it.cut, opts());
+  return new Promise(res => els.fmt.value === 'webp'
+    ? st.toBlob(res, 'image/webp', 0.92)
+    : st.toBlob(res, 'image/png'));
+}
+
+function drawThumbs(){
+  els.thumbs.innerHTML = '';
+  items.forEach((it, i) => {
+    const d = document.createElement('div');
+    d.className = 'thumb' + (i === current ? ' sel' : '');
+    d.innerHTML = `<img src="${it.thumbURL}" alt="">
+      <div class="st ${it.cut ? 'ok' : ''}">${it.cut ? (it.edited ? '已修補' : (it.passthrough ? '直通' : '完成')) : it.status}</div>
+      <div class="x">×</div>`;
+    d.onclick = e => {
+      if (e.target.classList.contains('x')){
+        URL.revokeObjectURL(it.thumbURL);
+        items.splice(i, 1);
+        if (current >= items.length) current = items.length - 1;
+        drawThumbs(); renderPreview();
+        els.dlAll.disabled = !items.some(x => x.cut);
+        return;
+      }
+      current = i; drawThumbs(); renderPreview();
+    };
+    els.thumbs.appendChild(d);
+  });
+}
+
+async function addFiles(fileList){
+  const files = [...fileList].filter(f => f.type.startsWith('image/'));
+  if (!files.length) return;
+  for (const f of files)
+    items.push({ name:f.name.replace(/\.[^.]+$/, ''), file:f, thumbURL:URL.createObjectURL(f),
+                 src:null, mask:null, cut:null, status:'等待', edited:false });
+  if (current < 0) current = 0;
+  drawThumbs();
+  await processQueue();
+}
+
+let running = false;
+async function processQueue(){
+  if (running) return;
+  running = true;
+  els.redo.disabled = true; els.model.disabled = true;
+  for (const it of items){
+    if (it.cut) continue;
+    it.status = '去背中'; drawThumbs();
+    els.hint.textContent = `正在用 ${MODELS[modelKey].name} 處理「${it.name}」…第一次會先下載模型，請稍等。`;
+    try {
+      const { src, mask, passthrough } = await segment(it.file, modelKey);
+      it.src = src; it.mask = mask; it.cut = applyMask(src, mask);
+      it.edited = false; it.passthrough = !!passthrough;
+      it.status = passthrough ? '直通' : '完成';
+      current = items.indexOf(it);
+    } catch (e){
+      console.error(e);
+      it.status = '失敗';
+      const alt = modelKey === 'fine' ? '「雙引擎合併」或「人像 · MODNet」（最輕，幾乎一定跑得動）'
+                : modelKey === 'portrait' ? '「通用 · RMBG-1.4」' : '「人像 · MODNet」';
+      els.hint.innerHTML = `<b style="color:var(--bad)">處理失敗</b><br>`
+        + errText(e).replace(/\n/g, '<br>')
+        + `<br><br>建議改用 ${alt}，或按左邊的「🔧 診斷資訊」把內容貼給我。`;
+    }
+    drawThumbs(); renderPreview();
+  }
+  running = false;
+  els.model.disabled = false;
+  els.dlAll.disabled = !items.some(x => x.cut);
+  els.redo.disabled = !items.length;
+  if (items.some(x => x.cut))
+    els.hint.textContent = IS_MOBILE
+      ? '邊緣不對的話按「手動修補」，或換一個去背引擎重跑。'
+      : '邊緣不對的話按下面的「手動修補」，或左邊換成別的引擎重跑。';
+}
+
+function download(blob, name){
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+
+/* =========================================================
+   手動修補筆刷
+========================================================= */
+let edit = null;
+
+function openEditor(){
+  const it = items[current];
+  if (!it?.mask) return;
+  const w = it.src.width, h = it.src.height;
+
+  // mask -> 白色圖層（alpha = mask）
+  const mc = document.createElement('canvas');
+  mc.width = w; mc.height = h;
+  const mctx = mc.getContext('2d', { willReadFrequently:true });
+  const id = mctx.createImageData(w, h);
+  for (let i = 0, n = w*h; i < n; i++){
+    id.data[i*4] = id.data[i*4+1] = id.data[i*4+2] = 255;
+    id.data[i*4+3] = it.mask[i];
+  }
+  mctx.putImageData(id, 0, 0);
+
+  // 顯示尺寸
+  const maxW = Math.min(900, window.innerWidth * 0.78);
+  const maxH = window.innerHeight * 0.62;
+  const s = Math.min(maxW / w, maxH / h, 1.6);
+  els.editCanvas.width  = Math.round(w * s);
+  els.editCanvas.height = Math.round(h * s);
+
+  const tmp = document.createElement('canvas');
+  tmp.width = els.editCanvas.width; tmp.height = els.editCanvas.height;
+
+  edit = { it, mc, tmp, orig:new Uint8ClampedArray(it.mask), mode:'add', undo:[], drawing:false, last:null };
+  els.editor.classList.add('on');
+  drawEditor();
+}
+
+function drawEditor(){
+  if (!edit) return;
+  const c = els.editCanvas, ctx = c.getContext('2d');
+  ctx.clearRect(0, 0, c.width, c.height);
+  ctx.drawImage(edit.it.src, 0, 0, c.width, c.height);
+  // 會被去掉的區域：壓暗 + 上紅色調（兩層才不會在紅色主體上看不出來）
+  const t = edit.tmp, tctx = t.getContext('2d');
+  for (const [color, alpha] of [['#05070d', 0.62], ['#ff2d55', 0.30]]){
+    tctx.globalCompositeOperation = 'source-over';
+    tctx.clearRect(0, 0, t.width, t.height);
+    tctx.fillStyle = color;
+    tctx.fillRect(0, 0, t.width, t.height);
+    tctx.globalCompositeOperation = 'destination-out';
+    tctx.drawImage(edit.mc, 0, 0, t.width, t.height);
+    ctx.globalAlpha = alpha;
+    ctx.drawImage(t, 0, 0);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function toSrc(e){
+  const c = els.editCanvas, r = c.getBoundingClientRect();
+  return {
+    x: (e.clientX - r.left) / r.width  * edit.mc.width,
+    y: (e.clientY - r.top)  / r.height * edit.mc.height,
+    k: edit.mc.width / r.width,     // 顯示 px -> 原圖 px
+  };
+}
+
+function paint(a, b, k){
+  const ctx = edit.mc.getContext('2d');
+  ctx.lineCap = ctx.lineJoin = 'round';
+  ctx.lineWidth = (+els.brush.value) * k;
+  if (edit.mode === 'add'){ ctx.globalCompositeOperation = 'source-over'; ctx.strokeStyle = '#fff'; }
+  else { ctx.globalCompositeOperation = 'destination-out'; ctx.strokeStyle = '#000'; }
+  ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+  ctx.globalCompositeOperation = 'source-over';
+}
+
+function pushUndo(){
+  const ctx = edit.mc.getContext('2d', { willReadFrequently:true });
+  edit.undo.push(ctx.getImageData(0, 0, edit.mc.width, edit.mc.height));
+  if (edit.undo.length > 5) edit.undo.shift();
+}
+
+els.editCanvas.addEventListener('pointerdown', e => {
+  if (!edit) return;
+  els.editCanvas.setPointerCapture(e.pointerId);
+  pushUndo();
+  edit.drawing = true;
+  edit.last = toSrc(e);
+  paint(edit.last, edit.last, edit.last.k);
+  drawEditor();
+});
+els.editCanvas.addEventListener('pointermove', e => {
+  if (!edit?.drawing) return;
+  const p = toSrc(e);
+  paint(edit.last, p, p.k);
+  edit.last = p;
+  drawEditor();
+});
+['pointerup','pointercancel','pointerleave'].forEach(t =>
+  els.editCanvas.addEventListener(t, () => { if (edit) edit.drawing = false; }));
+
+els.mAdd.onclick = () => { edit.mode = 'add'; els.mAdd.classList.add('on'); els.mDel.classList.remove('on'); };
+els.mDel.onclick = () => { edit.mode = 'del'; els.mDel.classList.add('on'); els.mAdd.classList.remove('on'); };
+els.brush.oninput = () => $('v-brush').textContent = els.brush.value;
+els.undo.onclick = () => {
+  if (!edit?.undo.length) return;
+  edit.mc.getContext('2d').putImageData(edit.undo.pop(), 0, 0);
+  drawEditor();
+};
+els.resetMask.onclick = () => {
+  if (!edit) return;
+  pushUndo();
+  const w = edit.mc.width, h = edit.mc.height;
+  const ctx = edit.mc.getContext('2d');
+  const id = ctx.createImageData(w, h);
+  for (let i = 0, n = w*h; i < n; i++){
+    id.data[i*4] = id.data[i*4+1] = id.data[i*4+2] = 255;
+    id.data[i*4+3] = edit.orig[i];
+  }
+  ctx.putImageData(id, 0, 0);
+  drawEditor();
+};
+els.doneFix.onclick = () => {
+  if (!edit) return;
+  const { it, mc } = edit;
+  const w = mc.width, h = mc.height;
+  const d = mc.getContext('2d', { willReadFrequently:true }).getImageData(0, 0, w, h).data;
+  const m = new Uint8ClampedArray(w*h);
+  for (let i = 0, n = w*h; i < n; i++) m[i] = d[i*4+3];
+  it.mask = m;
+  it.cut = applyMask(it.src, m);
+  it.edited = true;
+  edit = null;
+  els.editor.classList.remove('on');
+  drawThumbs(); renderPreview();
+};
+window.addEventListener('keydown', e => {
+  if (!edit) return;
+  if (e.key === 'Escape') els.doneFix.click();
+  if ((e.metaKey || e.ctrlKey) && e.key === 'z'){ e.preventDefault(); els.undo.click(); }
+  if (e.key === '[') { els.brush.value = Math.max(4, +els.brush.value - 6); els.brush.oninput(); }
+  if (e.key === ']') { els.brush.value = Math.min(120, +els.brush.value + 6); els.brush.oninput(); }
+});
+
+/* =========================================================
+   事件
+========================================================= */
+els.drop.onclick = () => els.file.click();
+els.file.onchange = e => { addFiles(e.target.files); e.target.value = ''; };
+['dragenter','dragover'].forEach(t => els.drop.addEventListener(t, e => { e.preventDefault(); els.drop.classList.add('over'); }));
+['dragleave','drop'].forEach(t => els.drop.addEventListener(t, e => { e.preventDefault(); els.drop.classList.remove('over'); }));
+els.drop.addEventListener('drop', e => addFiles(e.dataTransfer.files));
+window.addEventListener('paste', e => { if (e.clipboardData?.files?.length) addFiles(e.clipboardData.files); });
+
+[['outline','v-outline'],['edge','v-edge'],['pad','v-pad']].forEach(([id, out]) =>
+  els[id].addEventListener('input', () => { $(out).textContent = els[id].value; renderPreview(); }));
+els.outlineColor.addEventListener('input', renderPreview);
+els.shadow.addEventListener('change', renderPreview);
+els.size.addEventListener('change', updateSize);
+els.fmt.addEventListener('change', updateSize);
+
+function chainText(key){
+  const vs = usableVariants(MODELS[key]);
+  if (!vs.length) return '（無可用後端）';
+  return vs.map(v => `${v.device === 'webgpu' ? 'GPU' : 'CPU'}/${v.dtype}${v.repo ? '(修補版)' : ''}`).join(' → ');
+}
+
+function showModelNote(){
+  const cfg = MODELS[modelKey];
+  let tail;
+  if (cfg.combine){
+    const mb = cfg.combine.reduce((s, k) => s + (usableVariants(MODELS[k])[0]?.mb || 0), 0);
+    tail = `會依序跑：${cfg.combine.map(k => MODELS[k].name).join(' → ')}，合計約 ${mb}MB`;
+  } else {
+    const vs = usableVariants(cfg);
+    tail = vs.length
+      ? `首選 ${vs[0].device === 'webgpu' ? 'WebGPU' : 'CPU'}/${vs[0].dtype}（約 ${vs[0].mb}MB）`
+        + (vs.length > 1 ? `，失敗自動退到 ${chainText(modelKey).split(' → ').slice(1).join(' → ')}` : '')
+      : '這台裝置沒有可用後端';
+  }
+  els.modelnote.innerHTML = `${cfg.note}<br><span style="color:var(--tx)">${tail}</span>`;
+}
+
+function showDiag(){
+  const on = els.diag.classList.toggle('on');
+  if (!on) return;
+  const lines = [
+    `時間　　：${new Date().toLocaleString()}`,
+    `瀏覽器　：${navigator.userAgent}`,
+    `WebGPU　：${CAP.webgpu ? '可用' : '不可用'}`,
+    `shader-f16：${CAP.f16 ? '支援' : '不支援'}`,
+    `顯示卡　：${CAP.adapter}`,
+    `記憶體　：${navigator.deviceMemory ? navigator.deviceMemory + ' GB' : '未知'} / CPU ${navigator.hardwareConcurrency || '?'} 核`,
+    `裝置判定：${IS_MOBILE ? '行動裝置' : '桌機'}${IS_APPLE ? '（Apple）' : ''}，來源上限 ${maxSrc()}px`,
+    `離線模式：${'serviceWorker' in navigator ? (navigator.serviceWorker.controller ? '已啟用' : '已註冊，重新整理後生效') : '不支援'}`,
+    `直通模式：${els.passthrough.checked ? '開' : '關'}`,
+    `目前引擎：${MODELS[modelKey].name}（${MODELS[modelKey].id || MODELS[modelKey].combine.join(' + ')}）`,
+    `可用後端：${MODELS[modelKey].combine
+        ? MODELS[modelKey].combine.map(k => `${MODELS[k].name}: ${chainText(k)}`).join(' ｜ ')
+        : chainText(modelKey)}`,
+    `照片數　：${items.length}（成功 ${items.filter(i => i.cut).length}）`,
+    '',
+    '嘗試紀錄：',
+    ...(attemptLog.length ? attemptLog.slice(-12) : ['（尚未執行過去背）']),
+  ];
+  els.diag.textContent = lines.join('\n');
+}
+els.model.onchange = async () => {
+  modelKey = els.model.value;
+  showModelNote();
+  if (!items.length) return;
+  if (items.some(x => x.edited) && !confirm('重新去背會蓋掉你手動修補的結果，要繼續嗎？')) return;
+  items.forEach(it => { it.cut = null; it.mask = null; it.edited = false; it.status = '等待'; });
+  drawThumbs(); renderPreview();
+  await processQueue();
+};
+els.redo.onclick = () => els.model.onchange();
+els.fix.onclick = openEditor;
+
+document.querySelectorAll('[data-preset]').forEach(b => b.onclick = () => {
+  const p = {
+    classic:{ outline:10, edge:1.6, pad:8, shadow:true,  color:'#ffffff' },
+    thick:  { outline:22, edge:2.4, pad:6, shadow:true,  color:'#ffffff' },
+    clean:  { outline:0,  edge:1.2, pad:4, shadow:false, color:'#ffffff' },
+  }[b.dataset.preset];
+  els.outline.value = p.outline; $('v-outline').textContent = p.outline;
+  els.edge.value = p.edge;       $('v-edge').textContent = p.edge;
+  els.pad.value = p.pad;         $('v-pad').textContent = p.pad;
+  els.shadow.checked = p.shadow;
+  els.outlineColor.value = p.color;
+  renderPreview();
+});
+
+els.dl.onclick = async () => {
+  const it = items[current]; if (!it?.cut) return;
+  download(await exportBlob(it), `${it.name}_sticker.${els.fmt.value}`);
+};
+
+els.dlAll.onclick = async () => {
+  els.dlAll.disabled = true; els.dlAll.textContent = '打包中…';
+  try {
+    if (!window.JSZip) await new Promise((res, rej) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+      s.onload = res; s.onerror = rej; document.head.appendChild(s);
+    });
+    const zip = new JSZip();
+    let n = 1;
+    for (const it of items){
+      if (!it.cut) continue;
+      zip.file(`${String(n++).padStart(2,'0')}_${it.name}.${els.fmt.value}`, await exportBlob(it));
+    }
+    download(await zip.generateAsync({ type:'blob' }), 'stickers.zip');
+  } catch { alert('打包失敗（可能是無法載入 JSZip）。可以改用「下載這張」逐張存。'); }
+  els.dlAll.textContent = '打包下載全部（ZIP）'; els.dlAll.disabled = false;
+};
+
+/* 供自動化測試使用 */
+window.__sticker = { makeSticker, autoCrop, addOutline, sharpenAlpha, silhouette, applyMask,
+                     MODELS, CAP, errText, usableVariants, showDiag, attemptLog, mergeMasks, chainText,
+                     alphaProfile, maxSrc, IS_MOBILE, IS_APPLE,
+                     _state:{ items, openEditor, drawEditor, get edit(){ return edit; },
+                              setCurrent:i => { current = i; },
+                              setCap:o => Object.assign(CAP, o) } };
+
+els.diagBtn.onclick = showDiag;
+
+/* ---- 分享（手機上比「下載再從相簿翻出來」好用得多） ---- */
+els.share.onclick = async () => {
+  const it = items[current];
+  if (!it?.cut) return;
+  const blob = await exportBlob(it);
+  const file = new File([blob], `${it.name}_sticker.${els.fmt.value}`, { type: blob.type });
+  try {
+    if (navigator.canShare?.({ files:[file] })) await navigator.share({ files:[file] });
+    else download(blob, file.name);
+  } catch (e){
+    if (e?.name !== 'AbortError') download(blob, file.name);   // 使用者取消不算錯
+  }
+};
+if (navigator.canShare) els.share.style.display = '';
+
+/* ---- 預先下載模型，之後可離線用 ---- */
+els.prefetch.onclick = async () => {
+  const cfg = MODELS[modelKey];
+  const keys = cfg.combine || [modelKey];
+  els.prefetch.disabled = true;
+  const old = els.prefetch.textContent;
+  try {
+    if (!CAP.probed) await probeGPU();
+    for (const k of keys){
+      const v = usableVariants(MODELS[k])[0];
+      if (!v) continue;
+      els.prefetch.textContent = `下載 ${MODELS[k].name}…`;
+      await loadModel(k, v);
+    }
+    els.prefetch.textContent = '✅ 已存進裝置，可離線使用';
+  } catch (e){
+    els.prefetch.textContent = '下載失敗：' + errText(e).slice(0, 40);
+    setTimeout(() => { els.prefetch.textContent = old; }, 4000);
+  }
+  els.prefetch.disabled = false;
+};
+
+/* ---- iOS 提示 + 行動裝置預設引擎 ---- */
+if (IS_APPLE) els.iosTip.style.display = '';
+if (IS_MOBILE){
+  modelKey = 'portrait';                 // combo 在手機上太重
+  els.model.value = 'portrait';
+}
+
+/* ---- PWA：註冊 service worker（file:// 開啟時會自動略過） ---- */
+if ('serviceWorker' in navigator && location.protocol.startsWith('http')){
+  navigator.serviceWorker.register('sw.js')
+    .then(() => console.info('[貼紙工廠] service worker 已註冊，可離線使用'))
+    .catch(e => console.warn('[貼紙工廠] service worker 註冊失敗', e));
+}
+
+showModelNote();
+els.engine.textContent = '偵測環境…';
+probeGPU().then(() => {
+  els.engine.textContent = CAP.webgpu ? `WebGPU 可用${CAP.f16 ? '（含 fp16）' : '（無 fp16）'}` : 'CPU 模式';
+  showModelNote();
+});
+</script>
+</body>
+</html>
